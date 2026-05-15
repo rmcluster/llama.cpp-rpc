@@ -113,7 +113,7 @@ enum rpc_cmd {
 static_assert(RPC_CMD_HELLO == 14, "RPC_CMD_HELLO must be always 14");
 
 // Try RPC_CMD_SET_TENSOR_HASH first when data size is larger than this threshold
-const size_t HASH_THRESHOLD = 10 * 1024 * 1024;
+const size_t HASH_THRESHOLD = 1024;
 
 struct rpc_msg_hello_rsp {
     uint8_t major;
@@ -415,7 +415,8 @@ static bool recv_data(sockfd_t sockfd, void * data, size_t size) {
 }
 
 static bool send_msg(sockfd_t sockfd, const void * msg, size_t msg_size) {
-    if (!send_data(sockfd, &msg_size, sizeof(msg_size))) {
+    uint64_t size = (uint64_t)msg_size;
+    if (!send_data(sockfd, &size, sizeof(size))) {
         return false;
     }
     return send_data(sockfd, msg, msg_size);

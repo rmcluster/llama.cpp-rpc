@@ -129,3 +129,16 @@ COPY --from=build /app/full/llama-server /app
 HEALTHCHECK --interval=5m CMD [ "curl", "-f", "http://localhost:8080/health" ]
 
 ENTRYPOINT [ "/app/llama-server" ]
+
+### Target: rpc-server
+# Dedicated RPC server image containing only llama-rpc-server
+# ==============================================================================
+FROM base AS rpc-server
+
+ENV LLAMA_ARG_HOST=0.0.0.0
+
+COPY --from=build /app/full/llama-rpc-server /app
+
+HEALTHCHECK --interval=5m CMD [ "curl", "-f", "http://localhost:8080/health" ]
+
+ENTRYPOINT [ "/app/llama-rpc-server" ]

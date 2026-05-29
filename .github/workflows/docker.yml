@@ -36,15 +36,15 @@ jobs:
       matrix:
         config:
           # Multi-stage build
-          - { tag: "cpu", dockerfile: ".devops/cpu.Dockerfile", platforms: "linux/arm64", full: true, light: true, server: true, free_disk_space: false, runs_on: "ubuntu-24.04" }
-          - { tag: "cpu", dockerfile: ".devops/cpu.Dockerfile", platforms: "linux/amd64", full: true, light: true, server: true, free_disk_space: false, runs_on: "ubuntu-24.04" }
-          - { tag: "cuda cuda12", dockerfile: ".devops/cuda.Dockerfile", platforms: "linux/amd64", full: true, light: true, server: true, free_disk_space: true,  runs_on: "ubuntu-24.04", cuda_version: "12.4.0", ubuntu_version: "22.04" }
-          - { tag: "cuda13", dockerfile: ".devops/cuda-new.Dockerfile",  platforms: "linux/amd64", full: true, light: true, server: true, free_disk_space: true,  runs_on: "ubuntu-24.04", cuda_version: "13.1.0", ubuntu_version: "24.04" }
-          - { tag: "musa",   dockerfile: ".devops/musa.Dockerfile",   platforms: "linux/amd64", full: true, light: true, server: true, free_disk_space: true,  runs_on: "ubuntu-24.04" }
-          - { tag: "intel",  dockerfile: ".devops/intel.Dockerfile",  platforms: "linux/amd64", full: true, light: true, server: true, free_disk_space: true,  runs_on: "ubuntu-24.04" }
-          - { tag: "vulkan", dockerfile: ".devops/vulkan.Dockerfile", platforms: "linux/amd64", full: true, light: true, server: true, free_disk_space: false, runs_on: "ubuntu-24.04" }
-          - { tag: "rocm",   dockerfile: ".devops/rocm.Dockerfile",   platforms: "linux/amd64", full: true, light: true, server: true, free_disk_space: true,  runs_on: "ubuntu-24.04" }
-          - { tag: "openvino", dockerfile: ".devops/openvino.Dockerfile", platforms: "linux/amd64", full: true, light: true, server: true, free_disk_space: false, runs_on: "ubuntu-24.04" }
+          - { tag: "cpu", dockerfile: ".devops/cpu.Dockerfile", platforms: "linux/arm64", full: true, light: true, server: true, rpc_server: true, free_disk_space: false, runs_on: "ubuntu-24.04" }
+          - { tag: "cpu", dockerfile: ".devops/cpu.Dockerfile", platforms: "linux/amd64", full: true, light: true, server: true, rpc_server: true, free_disk_space: false, runs_on: "ubuntu-24.04" }
+          - { tag: "cuda cuda12", dockerfile: ".devops/cuda.Dockerfile", platforms: "linux/amd64", full: true, light: true, server: true, rpc_server: true, free_disk_space: true,  runs_on: "ubuntu-24.04", cuda_version: "12.4.0", ubuntu_version: "22.04" }
+          - { tag: "cuda13", dockerfile: ".devops/cuda-new.Dockerfile",  platforms: "linux/amd64", full: true, light: true, server: true, rpc_server: true, free_disk_space: true,  runs_on: "ubuntu-24.04", cuda_version: "13.1.0", ubuntu_version: "24.04" }
+          - { tag: "musa",   dockerfile: ".devops/musa.Dockerfile",   platforms: "linux/amd64", full: true, light: true, server: true, rpc_server: true, free_disk_space: true,  runs_on: "ubuntu-24.04" }
+          - { tag: "intel",  dockerfile: ".devops/intel.Dockerfile",  platforms: "linux/amd64", full: true, light: true, server: true, rpc_server: true, free_disk_space: true,  runs_on: "ubuntu-24.04" }
+          - { tag: "vulkan", dockerfile: ".devops/vulkan.Dockerfile", platforms: "linux/amd64", full: true, light: true, server: true, rpc_server: true, free_disk_space: false, runs_on: "ubuntu-24.04" }
+          - { tag: "rocm",   dockerfile: ".devops/rocm.Dockerfile",   platforms: "linux/amd64", full: true, light: true, server: true, rpc_server: true, free_disk_space: true,  runs_on: "ubuntu-24.04" }
+          - { tag: "openvino", dockerfile: ".devops/openvino.Dockerfile", platforms: "linux/amd64", full: true, light: true, server: true, rpc_server: true, free_disk_space: false, runs_on: "ubuntu-24.04" }
     steps:
       - name: Check out the repo
         uses: actions/checkout@v6
@@ -93,15 +93,18 @@ jobs:
               FULLTAGS="${FULLTAGS:+$FULLTAGS,}${PREFIX}full${TYPE},${PREFIX}full${TYPE}-${{ steps.srctag.outputs.name }}"
               LIGHTTAGS="${LIGHTTAGS:+$LIGHTTAGS,}${PREFIX}light${TYPE},${PREFIX}light${TYPE}-${{ steps.srctag.outputs.name }}"
               SERVERTAGS="${SERVERTAGS:+$SERVERTAGS,}${PREFIX}server${TYPE},${PREFIX}server${TYPE}-${{ steps.srctag.outputs.name }}"
+              RPCSERVERTAGS="${RPCSERVERTAGS:+$RPCSERVERTAGS,}${PREFIX}rpc-server${TYPE},${PREFIX}rpc-server${TYPE}-${{ steps.srctag.outputs.name }}"
           done
           echo "cache_output_tags=$CACHETAGS" >> $GITHUB_OUTPUT
           echo "full_output_tags=$FULLTAGS" >> $GITHUB_OUTPUT
           echo "light_output_tags=$LIGHTTAGS" >> $GITHUB_OUTPUT
           echo "server_output_tags=$SERVERTAGS" >> $GITHUB_OUTPUT
+          echo "rpc_server_output_tags=$RPCSERVERTAGS" >> $GITHUB_OUTPUT
           echo "cache_output_tags=$CACHETAGS"  # print out for debugging
           echo "full_output_tags=$FULLTAGS"  # print out for debugging
           echo "light_output_tags=$LIGHTTAGS"  # print out for debugging
           echo "server_output_tags=$SERVERTAGS"  # print out for debugging
+          echo "rpc_server_output_tags=$RPCSERVERTAGS"  # print out for debugging
         env:
           GITHUB_REPOSITORY_OWNER: '${{ github.repository_owner }}'
 
@@ -183,6 +186,31 @@ jobs:
           tags: ${{ steps.tag.outputs.server_output_tags }}
           file: ${{ matrix.config.dockerfile }}
           target: server
+          provenance: false
+          build-args: |
+            ${{ matrix.config.ubuntu_version && format('UBUNTU_VERSION={0}', matrix.config.ubuntu_version) || '' }}
+            ${{ matrix.config.cuda_version && format('CUDA_VERSION={0}', matrix.config.cuda_version) || '' }}
+          # using github experimental cache
+          #cache-from: type=gha
+          #cache-to: type=gha,mode=max
+          # return to this if the experimental github cache is having issues
+          #cache-to: type=local,dest=/tmp/.buildx-cache
+          #cache-from: type=local,src=/tmp/.buildx-cache
+          # using registry cache (no storage limit)
+          cache-from: type=registry,ref=${{ steps.tag.outputs.cache_output_tags }}
+          cache-to: type=registry,ref=${{ steps.tag.outputs.cache_output_tags }},mode=max
+
+      - name: Build and push RPC Server Docker image (tagged + versioned)
+        if: ${{ (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && matrix.config.rpc_server == true }}
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          push: true
+          platforms: ${{ matrix.config.platforms }}
+          # tag list is generated from step above
+          tags: ${{ steps.tag.outputs.rpc_server_output_tags }}
+          file: ${{ matrix.config.dockerfile }}
+          target: rpc-server
           provenance: false
           build-args: |
             ${{ matrix.config.ubuntu_version && format('UBUNTU_VERSION={0}', matrix.config.ubuntu_version) || '' }}

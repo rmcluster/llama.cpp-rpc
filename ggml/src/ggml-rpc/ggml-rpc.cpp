@@ -1261,6 +1261,7 @@ bool rpc_server::set_tensor(const std::vector<uint8_t> & input) {
 
 bool rpc_server::get_cached_file(uint64_t hash, std::vector<uint8_t> & data) {
     if (!cache_dir) {
+        GGML_LOG_INFO("[%s] cache disabled while looking up hash=%016" PRIx64 "\n", __func__, hash);
         return false;
     }
     char hash_str[17];
@@ -1268,6 +1269,7 @@ bool rpc_server::get_cached_file(uint64_t hash, std::vector<uint8_t> & data) {
     fs::path cache_file = fs::path(cache_dir) / hash_str;
     std::error_code ec;
     if (!fs::exists(cache_file, ec)) {
+        GGML_LOG_INFO("[%s] cache miss for '%s'\n", __func__, cache_file.c_str());
         return false;
     }
     std::ifstream ifs(cache_file, std::ios::binary);
@@ -1276,6 +1278,7 @@ bool rpc_server::get_cached_file(uint64_t hash, std::vector<uint8_t> & data) {
     ifs.seekg(0, std::ios::beg);
     data.resize(size);
     ifs.read((char *)data.data(), size);
+    GGML_LOG_INFO("[%s] cache hit for '%s' (%zu bytes)\n", __func__, cache_file.c_str(), size);
     return true;
 }
 

@@ -28,7 +28,6 @@
 #endif
 #include <cstring>
 #include <fstream>
-#include <filesystem>
 #include <algorithm>
 
 static const char * RPC_DEBUG = std::getenv("GGML_RPC_DEBUG");
@@ -37,9 +36,20 @@ static const char * RPC_DEBUG = std::getenv("GGML_RPC_DEBUG");
     do { if (RPC_DEBUG) GGML_LOG_DEBUG(__VA_ARGS__); } while (0)
 
 
-namespace fs = std::filesystem;
-
 static constexpr size_t MAX_CHUNK_SIZE = 1024ull * 1024ull * 1024ull; // 1 GiB
+
+static std::string rpc_cache_file_path(const char * cache_dir, const char * hash_str) {
+    if (cache_dir == nullptr || cache_dir[0] == '\0') {
+        return std::string(hash_str);
+    }
+
+    std::string path(cache_dir);
+    if (path.back() != '/') {
+        path.push_back('/');
+    }
+    path += hash_str;
+    return path;
+}
 
 #ifdef _WIN32
 typedef SOCKET sockfd_t;
@@ -1250,7 +1260,7 @@ bool rpc_server::set_tensor(const std::vector<uint8_t> & input) {
         char hash_str[17];
         snprintf(hash_str, sizeof(hash_str), "%016" PRIx64, hash);
         // save to cache_dir/hash_str
-        fs::path cache_file = fs::path(cache_dir) / hash_str;
+        std::string cache_file = rpc_cache_file_path(cache_dir, hash_str);
         std::ofstream ofs(cache_file, std::ios::binary);
         ofs.write((const char *)data, size);
         GGML_LOG_INFO("[%s] saved to '%s'\n", __func__, cache_file.c_str());
@@ -1266,13 +1276,12 @@ bool rpc_server::get_cached_file(uint64_t hash, std::vector<uint8_t> & data) {
     }
     char hash_str[17];
     snprintf(hash_str, sizeof(hash_str), "%016" PRIx64, hash);
-    fs::path cache_file = fs::path(cache_dir) / hash_str;
-    std::error_code ec;
-    if (!fs::exists(cache_file, ec)) {
+    std::string cache_file = rpc_cache_file_path(cache_dir, hash_str);
+    std::ifstream ifs(cache_file, std::ios::binary);
+    if (!ifs.good()) {
         GGML_LOG_INFO("[%s] cache miss for '%s'\n", __func__, cache_file.c_str());
         return false;
     }
-    std::ifstream ifs(cache_file, std::ios::binary);
     ifs.seekg(0, std::ios::end);
     size_t size = ifs.tellg();
     ifs.seekg(0, std::ios::beg);

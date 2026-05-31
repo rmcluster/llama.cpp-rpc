@@ -2,12 +2,20 @@
 
 #ifdef _WIN32
 
-dl_handle * dl_load_library(const fs::path & path) {
+dl_handle * dl_load_library(const char * path) {
     // suppress error dialogs for missing DLLs
     DWORD old_mode = SetErrorMode(SEM_FAILCRITICALERRORS);
     SetErrorMode(old_mode | SEM_FAILCRITICALERRORS);
 
-    HMODULE handle = LoadLibraryW(path.wstring().c_str());
+    int wide_len = MultiByteToWideChar(CP_UTF8, 0, path, -1, NULL, 0);
+    if (wide_len <= 0) {
+        SetErrorMode(old_mode);
+        return nullptr;
+    }
+
+    std::wstring wide_path(wide_len, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, path, -1, &wide_path[0], wide_len);
+    HMODULE handle = LoadLibraryW(wide_path.c_str());
 
     SetErrorMode(old_mode);
 
@@ -31,8 +39,8 @@ const char * dl_error() {
 
 #else
 
-dl_handle * dl_load_library(const fs::path & path) {
-    dl_handle * handle = dlopen(path.string().c_str(), RTLD_NOW | RTLD_LOCAL);
+dl_handle * dl_load_library(const char * path) {
+    dl_handle * handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
     return handle;
 }
 

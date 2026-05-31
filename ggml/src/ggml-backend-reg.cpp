@@ -4,7 +4,6 @@
 #include "ggml-impl.h"
 #include <algorithm>
 #include <cstring>
-#include <filesystem>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -85,23 +84,6 @@
 #ifdef GGML_USE_OPENVINO
 #include "ggml-openvino.h"
 #endif
-
-namespace fs = std::filesystem;
-
-static std::string path_str(const fs::path & path) {
-    try {
-#if defined(__cpp_lib_char8_t)
-        // C++20 and later: u8string() returns std::u8string
-        const std::u8string u8str = path.u8string();
-        return std::string(reinterpret_cast<const char *>(u8str.data()), u8str.size());
-#else
-        // C++17: u8string() returns std::string
-        return path.u8string();
-#endif
-    } catch (...) {
-        return std::string();
-    }
-}
 
 struct ggml_backend_reg_entry {
     ggml_backend_reg_t reg;
@@ -198,11 +180,11 @@ struct ggml_backend_registry {
         devices.push_back(device);
     }
 
-    ggml_backend_reg_t load_backend(const fs::path & path, bool silent) {
+    ggml_backend_reg_t load_backend(const char * path, bool silent) {
         dl_handle_ptr handle { dl_load_library(path) };
         if (!handle) {
             if (!silent) {
-                GGML_LOG_ERROR("%s: failed to load %s: %s\n", __func__, path_str(path).c_str(), dl_error());
+                GGML_LOG_ERROR("%s: failed to load %s: %s\n", __func__, path, dl_error());
             }
             return nullptr;
         }
@@ -210,7 +192,7 @@ struct ggml_backend_registry {
         auto score_fn = (ggml_backend_score_t) dl_get_sym(handle.get(), "ggml_backend_score");
         if (score_fn && score_fn() == 0) {
             if (!silent) {
-                GGML_LOG_INFO("%s: backend %s is not supported on this system\n", __func__, path_str(path).c_str());
+                GGML_LOG_INFO("%s: backend %s is not supported on this system\n", __func__, path);
             }
             return nullptr;
         }
@@ -218,7 +200,7 @@ struct ggml_backend_registry {
         auto backend_init_fn = (ggml_backend_init_t) dl_get_sym(handle.get(), "ggml_backend_init");
         if (!backend_init_fn) {
             if (!silent) {
-                GGML_LOG_ERROR("%s: failed to find ggml_backend_init in %s\n", __func__, path_str(path).c_str());
+                GGML_LOG_ERROR("%s: failed to find ggml_backend_init in %s\n", __func__, path);
             }
             return nullptr;
         }
@@ -228,16 +210,16 @@ struct ggml_backend_registry {
             if (!silent) {
                 if (!reg) {
                     GGML_LOG_ERROR("%s: failed to initialize backend from %s: ggml_backend_init returned NULL\n",
-                        __func__, path_str(path).c_str());
+                        __func__, path);
                 } else {
                     GGML_LOG_ERROR("%s: failed to initialize backend from %s: incompatible API version (backend: %d, current: %d)\n",
-                        __func__, path_str(path).c_str(), reg->api_version, GGML_BACKEND_API_VERSION);
+                        __func__, path, reg->api_version, GGML_BACKEND_API_VERSION);
                 }
             }
             return nullptr;
         }
 
-        GGML_LOG_INFO("%s: loaded %s backend from %s\n", __func__, ggml_backend_reg_name(reg), path_str(path).c_str());
+        GGML_LOG_INFO("%s: loaded %s backend from %s\n", __func__, ggml_backend_reg_name(reg), path);
 
         register_backend(reg, std::move(handle));
 
@@ -371,6 +353,7 @@ ggml_backend_t ggml_backend_init_best(void) {
 }
 
 // Dynamic loading
+#ifdef GGML_BACKEND_DL
 ggml_backend_reg_t ggml_backend_load(const char * path) {
     return get_reg().load_backend(path, false);
 }
@@ -572,3 +555,20 @@ void ggml_backend_load_all_from_path(const char * dir_path) {
         ggml_backend_load(backend_path);
     }
 }
+#else
+ggml_backend_reg_t ggml_backend_load(const char * path) {
+    GGML_UNUSED(path);
+    return nullptr;
+}
+
+void ggml_backend_unload(ggml_backend_reg_t reg) {
+    GGML_UNUSED(reg);
+}
+
+void ggml_backend_load_all() {
+}
+
+void ggml_backend_load_all_from_path(const char * dir_path) {
+    GGML_UNUSED(dir_path);
+}
+#endif

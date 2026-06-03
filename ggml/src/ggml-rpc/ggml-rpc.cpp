@@ -90,7 +90,9 @@ private:
 struct rpc_server_runtime {
     std::shared_ptr<socket_t> listener;
     std::shared_ptr<socket_t> client;
-    std::atomic<bool> stop_requested = false;
+    std::atomic<bool> stop_requested;
+
+    rpc_server_runtime() : stop_requested(false) {}
 };
 
 static std::mutex g_rpc_server_registry_mutex;

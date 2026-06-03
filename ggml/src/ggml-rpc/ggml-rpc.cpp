@@ -8,6 +8,7 @@
 #include <vector>
 #include <memory>
 #include <mutex>
+#include <atomic>
 #include <unordered_map>
 #include <unordered_set>
 #ifdef _WIN32
@@ -53,14 +54,56 @@ struct socket_t {
     sockfd_t fd;
     socket_t(sockfd_t fd) : fd(fd) {}
     ~socket_t() {
+        close_socket();
+    }
+
+    void close_socket() {
+        std::lock_guard<std::mutex> lock(mtx);
+        if (closed || this->fd < 0) {
+            return;
+        }
         LOG_DBG("[%s] closing socket %d\n", __func__, this->fd);
 #ifdef _WIN32
         closesocket(this->fd);
 #else
         close(this->fd);
 #endif
+        closed = true;
+        this->fd = -1;
     }
+
+private:
+    std::mutex mtx;
+    bool closed = false;
 };
+
+struct rpc_server_runtime {
+    std::shared_ptr<socket_t> listener;
+    std::shared_ptr<socket_t> client;
+    std::atomic<bool> stop_requested = false;
+};
+
+static std::mutex g_rpc_server_registry_mutex;
+static std::unordered_map<std::string, std::shared_ptr<rpc_server_runtime>> g_rpc_server_registry;
+
+static void register_rpc_server_runtime(const std::string & endpoint, const std::shared_ptr<rpc_server_runtime> & runtime) {
+    std::lock_guard<std::mutex> lock(g_rpc_server_registry_mutex);
+    g_rpc_server_registry[endpoint] = runtime;
+}
+
+static void unregister_rpc_server_runtime(const std::string & endpoint, const std::shared_ptr<rpc_server_runtime> & runtime) {
+    std::lock_guard<std::mutex> lock(g_rpc_server_registry_mutex);
+    auto it = g_rpc_server_registry.find(endpoint);
+    if (it != g_rpc_server_registry.end() && it->second == runtime) {
+        g_rpc_server_registry.erase(it);
+    }
+}
+
+static std::shared_ptr<rpc_server_runtime> find_rpc_server_runtime(const std::string & endpoint) {
+    std::lock_guard<std::mutex> lock(g_rpc_server_registry_mutex);
+    auto it = g_rpc_server_registry.find(endpoint);
+    return it != g_rpc_server_registry.end() ? it->second : nullptr;
+}
 
 // macro for nicer error messages on server crash
 #define RPC_STATUS_ASSERT(x) if (!(x)) GGML_ABORT("Remote RPC server crashed or returned malformed response")
@@ -1896,24 +1939,56 @@ void ggml_backend_rpc_start_server(const char * endpoint, const char * cache_dir
         fprintf(stderr, "Failed to create server socket\n");
         return;
     }
-    while (true) {
+    auto runtime = std::make_shared<rpc_server_runtime>();
+    runtime->listener = server_socket;
+    register_rpc_server_runtime(endpoint, runtime);
+
+    while (!runtime->stop_requested.load()) {
         auto client_socket = socket_accept(server_socket->fd);
         if (client_socket == nullptr) {
+            if (runtime->stop_requested.load()) {
+                break;
+            }
             fprintf(stderr, "Failed to accept client connection\n");
-            return;
+            break;
         }
+        runtime->client = client_socket;
         printf("Accepted client connection\n");
         fflush(stdout);
         rpc_serve_client(backends, cache_dir, client_socket->fd);
+        runtime->client.reset();
         printf("Client connection closed\n");
         fflush(stdout);
     }
+    unregister_rpc_server_runtime(endpoint, runtime);
+    runtime->client.reset();
+    runtime->listener.reset();
 #ifdef _WIN32
     WSACleanup();
 #endif
     for (auto backend : backends) {
         ggml_backend_free(backend);
     }
+}
+
+bool ggml_backend_rpc_stop_server(const char * endpoint) {
+    if (endpoint == nullptr) {
+        return false;
+    }
+
+    auto runtime = find_rpc_server_runtime(endpoint);
+    if (runtime == nullptr) {
+        return false;
+    }
+
+    runtime->stop_requested.store(true);
+    if (runtime->client) {
+        runtime->client->close_socket();
+    }
+    if (runtime->listener) {
+        runtime->listener->close_socket();
+    }
+    return true;
 }
 
 // device interface
@@ -2046,6 +2121,9 @@ static void * ggml_backend_rpc_get_proc_address(ggml_backend_reg_t reg, const ch
     }
     if (std::strcmp(name, "ggml_backend_rpc_start_server") == 0) {
         return (void *)ggml_backend_rpc_start_server;
+    }
+    if (std::strcmp(name, "ggml_backend_rpc_stop_server") == 0) {
+        return (void *)ggml_backend_rpc_stop_server;
     }
     return NULL;
 

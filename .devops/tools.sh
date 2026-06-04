@@ -31,8 +31,6 @@ elif [[ "$arg1" == '--all-in-one' || "$arg1" == '-a' ]]; then
     done
 elif [[ "$arg1" == '--server' || "$arg1" == '-s' ]]; then
     exec ./llama-server "$@"
-elif [[ "$arg1" == '--rpc-server' || "$arg1" == '-rs' ]]; then
-    exec ./llama-rpc-server "$@"
 else
     echo "Unknown command: $arg1"
     echo "Available commands: "
@@ -52,6 +50,4 @@ else
     echo "              ex: \"/models/\" 7B"
     echo "  --server (-s): Run a model on the server"
     echo "              ex: -m /models/7B/ggml-model-q4_0.bin -c 2048 -ngl 43 -mg 1 --port 8080"
-    echo "  --rpc-server (-rs): Run the RPC server"
-    echo "              ex: -c 2048 -ngl 43 --port 8080"
 fi

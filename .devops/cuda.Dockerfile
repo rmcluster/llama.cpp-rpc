@@ -92,16 +92,3 @@ WORKDIR /app
 HEALTHCHECK CMD [ "curl", "-f", "http://localhost:8080/health" ]
 
 ENTRYPOINT [ "/app/llama-server" ]
-
-### RPC Server, RPC Server only
-FROM base AS rpc-server
-
-ENV LLAMA_ARG_HOST=0.0.0.0
-
-COPY --from=build /app/full/llama-rpc-server /app
-
-WORKDIR /app
-
-HEALTHCHECK CMD [ "curl", "-f", "http://localhost:8080/health" ]
-
-ENTRYPOINT [ "/app/llama-rpc-server" ]
